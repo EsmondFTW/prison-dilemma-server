@@ -1,0 +1,31 @@
+# Byte-compiled Python files
+*.pyc
+*.pyo
+
+# Log files
+*.log
+
+# Virtual environment files
+venv/
+env/
+
+# Websocket server files
+ws.log
+
+# IDE-specific files
+.vscode/
+.idea/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Sensitive information
+secrets.json
+api_keys.txt
+
+# Other ignore patterns
+__pycache__/
+*.egg-info/
+dist/
+build/
