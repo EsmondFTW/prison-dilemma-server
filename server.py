@@ -18,7 +18,7 @@ sessions = deque()  # Queue to manage sessions
 visualizer = None
 
 
-async def compute_result(session):
+async def compute_result(session, round_number):
     player1, player2 = session.keys()
     move1, move2 = session.values()
     result = payoff_matrix[(move1, move2)]
@@ -32,8 +32,9 @@ async def compute_result(session):
    # Send data to visualizer
     if visualizer:
         data = {
-            "Team1": {"player_id": player1, "move": move1},
-            "Team2": {"player_id": player2, "move": move2}
+            "Session_id": player1 + player2,
+            "Team1": {"player_id": player1, "move": move1, "score": result[0], "round": round_number},
+            "Team2": {"player_id": player2, "move": move2, "score": result[1], "round": round_number}
         }
         await visualizer.send(json.dumps(data))
 
@@ -55,13 +56,15 @@ async def handle_client(websocket, path):
             clients[player_id] = websocket
             print(f"Player {player_id} connected")
 
-
-            # Check for an existing session with one player
-            if sessions and len(sessions[0]) == 1:
-                session = sessions.popleft()  # Get the existing session with one player
+            # Check for an existing session with one player or an empty session
+            if sessions and (len(sessions[0]) == 1 or (len(sessions[0]) == 0 and len(sessions) > 1)):
+                session = sessions.popleft()  # Get the existing session
                 session[player_id] = None  # Add the new player to the session
+                if len(sessions) > 1 and len(session) == 0:
+                    sessions.popleft()  # Remove the empty session if it's not the only one
                 print(f"Player {player_id} joined an existing session")
             else:
+                # Create new session id
                 session = {player_id: None}  # Create a new session for the new player
                 sessions.append(session)
                 print(f"Player {player_id} started a new session")
@@ -70,7 +73,7 @@ async def handle_client(websocket, path):
             # Send number of rounds to Client
             await websocket.send("5")
 
-
+            round_number = 1
             # Wait for moves
             while True:
                 data = await websocket.recv()
@@ -80,7 +83,8 @@ async def handle_client(websocket, path):
 
                 # Check if both players have made their moves and the session has 2 players
                 if len(session) == 2 and None not in session.values():
-                    await compute_result(session)
+                    await compute_result(session,round_number)
+                    round_number+=1
                     sessions.append(session)  # Re-add the completed session for reuse
 
 
@@ -100,10 +104,10 @@ async def handle_client(websocket, path):
         for session in sessions:
             if player_id in session:
                 del session[player_id]
-                if len(session) < 2:  # If one player left, keep it for a new player
+                if len(session) == 0:  # If the session is now empty
+                    sessions.remove(session)  # Remove the empty session
+                elif len(session) < 2:  # If one player left, keep it for a new player
                     print(f"Session with {player_id} is waiting for another player.")
-                else:
-                    sessions.remove(session)  # Remove fully empty sessions if needed
                 break
 
 
