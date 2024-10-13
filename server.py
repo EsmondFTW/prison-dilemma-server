@@ -3,6 +3,7 @@ import websockets
 import json
 from collections import deque
 
+
 # Define the payoff matrix
 payoff_matrix = {
     ('C', 'C'): (3, 3),  # Both cooperate
@@ -11,8 +12,11 @@ payoff_matrix = {
     ('D', 'C'): (5, 0),  # Player 1 defects, Player 2 cooperates
 }
 
+
 clients = {}
 sessions = deque()  # Queue to manage sessions
+visualizer = None
+
 
 async def compute_result(session):
     player1, player2 = session.keys()
@@ -24,45 +28,73 @@ async def compute_result(session):
     # Send results to both clients
     await clients[player1].send(json.dumps({"result": result[0], "move": move2}))
     await clients[player2].send(json.dumps({"result": result[1], "move": move1}))
+    
+   # Send data to visualizer
+    if visualizer:
+        data = {
+            "Team1": {"player_id": player1, "move": move1},
+            "Team2": {"player_id": player2, "move": move2}
+        }
+        await visualizer.send(json.dumps(data))
+
 
 async def handle_client(websocket, path):
+    global visualizer
     try:
         # Register client
         player_id = await websocket.recv()
-        clients[player_id] = websocket
-        print(f"Player {player_id} connected")
 
-        # Check for an existing session with one player
-        if sessions and len(sessions[0]) == 1:
-            session = sessions.popleft()  # Get the existing session with one player
-            session[player_id] = None  # Add the new player to the session
-            print(f"Player {player_id} joined an existing session")
+
+        if player_id == "Visualizer":
+            print("Visualizer connected")
+            visualizer = websocket
+            # Keep visualizer connection active indefinitely
+            while True:
+                await asyncio.sleep(10)  # Prevent disconnection due to inactivity
         else:
-            session = {player_id: None}  # Create a new session for the new player
-            sessions.append(session)
-            print(f"Player {player_id} started a new session")
+            clients[player_id] = websocket
+            print(f"Player {player_id} connected")
 
-        # Send number of rounds to Client
-        await websocket.send("5")
 
-        # Wait for moves
-        while True:
-            data = await websocket.recv()
-            move_data = json.loads(data)
-            session[player_id] = move_data['move']
+            # Check for an existing session with one player
+            if sessions and len(sessions[0]) == 1:
+                session = sessions.popleft()  # Get the existing session with one player
+                session[player_id] = None  # Add the new player to the session
+                print(f"Player {player_id} joined an existing session")
+            else:
+                session = {player_id: None}  # Create a new session for the new player
+                sessions.append(session)
+                print(f"Player {player_id} started a new session")
 
-            # Check if both players have made their moves and the session has 2 players
-            if len(session) == 2 and None not in session.values():
-                await compute_result(session)
-                sessions.append(session)  # Re-add the completed session for reuse
 
-                # Reset moves for the next round
-                for key in session.keys():
-                    session[key] = None
+            # Send number of rounds to Client
+            await websocket.send("5")
+
+
+            # Wait for moves
+            while True:
+                data = await websocket.recv()
+                move_data = json.loads(data)
+                session[player_id] = move_data['move']
+
+
+                # Check if both players have made their moves and the session has 2 players
+                if len(session) == 2 and None not in session.values():
+                    await compute_result(session)
+                    sessions.append(session)  # Re-add the completed session for reuse
+
+
+                    # Reset moves for the next round
+                    for key in session.keys():
+                        session[key] = None
+
 
     except websockets.ConnectionClosed:
         print(f"Connection closed for {player_id}")
-        del clients[player_id]
+        
+        if player_id != "Visualizer":
+            del clients[player_id]
+
 
         # Clean up the session if necessary
         for session in sessions:
@@ -74,8 +106,10 @@ async def handle_client(websocket, path):
                     sessions.remove(session)  # Remove fully empty sessions if needed
                 break
 
+
 async def main():
-    async with websockets.serve(handle_client, "localhost", 6789):
+    async with websockets.serve(handle_client, "localhost", 6789):  
         await asyncio.Future()  # run forever
+
 
 asyncio.run(main())
