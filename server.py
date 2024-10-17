@@ -45,6 +45,11 @@ async def handle_client(websocket, path):
         # Register client
         player_id = await websocket.recv()
 
+        if player_id in clients:
+            await websocket.send("Connection rejected: Player ID already in use")
+            await websocket.close()
+            print(f"Connection rejected for player {player_id}: ID already in use")
+            return
 
         if player_id == "Visualizer":
             print("Visualizer connected")
